@@ -1,0 +1,46 @@
+import { describe, expect, it } from 'vitest';
+import request from 'supertest';
+import { createServer } from '../../../src/server.js';
+import { buildTestRepositories } from '../../helpers/fixtures.js';
+
+describe('GET /', () => {
+  it('renderiza o quadro com suas colunas', async () => {
+    const app = createServer(buildTestRepositories());
+
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.type).toBe('text/html');
+    expect(response.text).toContain('Quadro de Teste');
+    expect(response.text).toContain('Coluna 1');
+    expect(response.text).toContain('Coluna 2');
+  });
+});
+
+describe('POST /columns', () => {
+it('POST /columns cria uma nova coluna e redireciona para /', async () => {
+  const repositories = buildTestRepositories();
+  const app = createServer(repositories);
+
+  const response = await request(app)
+    .post('/columns')
+    .send({
+      name: 'Nova Coluna',
+    });
+
+  expect(response.status).toBe(303);
+  expect(response.headers.location).toBe('/');
+
+  const board = repositories.boardRepository.getDefault();
+
+  expect(board.columns).toHaveLength(3);
+
+  const newColumn = board.columns.find(
+    (column) => column.name === 'Nova Coluna',
+  );
+
+  expect(newColumn).toBeDefined();
+  expect(newColumn?.wipLimit).toBeNull();
+});
+
+});
