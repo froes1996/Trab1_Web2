@@ -111,7 +111,6 @@ export function createWebRoutes(prisma: PrismaClient, imageStorage: ImageStorage
           ? req.body.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
           : undefined;
 
-        // Chamamos a versão atualizada do controller que aceita um array de urls
         await postController.create(req.session.userId!, { content: req.body.content, tags }, imageUrls);
         res.redirect('/');
       } catch (err) {
