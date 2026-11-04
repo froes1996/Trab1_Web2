@@ -39,29 +39,39 @@ describe('POST /posts (autenticado)', () => {
     expect(post.tags.map((t) => t.name).sort()).toEqual(['orm', 'prisma']);
   });
 
-  it('faz upload da imagem via ImageStorage e salva a URL retornada no post', async () => {
+  // AQUI FOI ALTERADO: "images" em vez de "image", e verificação na tabela "PostImage"
+  it('faz upload de múltiplas imagens via ImageStorage e salva as URLs retornadas no post', async () => {
     const { agent } = await registerAndLogin(app, prisma, 'ana@exemplo.com');
 
     const res = await agent
       .post('/posts')
       .field('content', 'Post com foto')
-      .attach('image', Buffer.from('fake-image-bytes'), { filename: 'foto.png', contentType: 'image/png' });
+      .attach('images', Buffer.from('fake-image-bytes-1'), { filename: 'foto1.png', contentType: 'image/png' })
+      .attach('images', Buffer.from('fake-image-bytes-2'), { filename: 'foto2.jpg', contentType: 'image/jpeg' });
 
     expect(res.status).toBe(302);
-    expect(imageStorage.uploads).toHaveLength(1);
-    expect(imageStorage.uploads[0].originalname).toBe('foto.png');
+    expect(imageStorage.uploads).toHaveLength(2);
+    expect(imageStorage.uploads[0].originalname).toBe('foto1.png');
+    expect(imageStorage.uploads[1].originalname).toBe('foto2.jpg');
 
-    const post = await prisma.post.findFirstOrThrow({ where: { content: 'Post com foto' } });
-    expect(post.imageUrl).toBe('https://fake-bucket.test/foto.png');
+    const post = await prisma.post.findFirstOrThrow({ 
+      where: { content: 'Post com foto' },
+      include: { images: true } 
+    });
+    
+    expect(post.images).toHaveLength(2);
+    expect(post.images[0].url).toBe('https://fake-bucket.test/foto1.png');
+    expect(post.images[1].url).toBe('https://fake-bucket.test/foto2.jpg');
   });
 
+  // AQUI FOI ALTERADO: "images" em vez de "image"
   it('rejeita um arquivo que não é imagem (fileFilter do Multer)', async () => {
     const { agent } = await registerAndLogin(app, prisma, 'ana@exemplo.com');
 
     const res = await agent
       .post('/posts')
       .field('content', 'Post com anexo inválido')
-      .attach('image', Buffer.from('não é imagem'), { filename: 'arquivo.txt', contentType: 'text/plain' });
+      .attach('images', Buffer.from('não é imagem'), { filename: 'arquivo.txt', contentType: 'text/plain' });
 
     expect(res.status).toBe(500);
     expect(imageStorage.uploads).toHaveLength(0);

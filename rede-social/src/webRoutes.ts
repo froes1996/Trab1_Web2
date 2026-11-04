@@ -9,9 +9,6 @@ import type { ImageStorage } from './uploads/storage.js';
 import { asyncHandler } from './shared/http.js';
 import { DuplicateEmailError, InvalidCredentialsError, ValidationError } from './shared/errors.js';
 
-// Rotas que servem HTML (EJS) e dependem de sessão — diferente de
-// routes.ts, que é só a API JSON de leitura. `requireAuth` (autenticação)
-// e `requireOwnPost` (autorização) ficam em src/auth/middleware.ts.
 export function createWebRoutes(prisma: PrismaClient, imageStorage: ImageStorage): Router {
   const router = Router();
   const authController = new AuthController(prisma);
@@ -57,11 +54,7 @@ export function createWebRoutes(prisma: PrismaClient, imageStorage: ImageStorage
     asyncHandler(async (req, res) => {
       try {
         const user = await authController.login(req.body);
-        // É isso que "loga" o usuário: guardar o id na sessão. A partir
-        // daqui, toda requisição desse navegador vai carregar
-        // `req.session.userId` (via cookie) até o logout ou o cookie expirar.
         req.session.userId = user.id; 
-        // req.session.user = user; // Ensure the `user` type matches the extended session type
         res.redirect('/');
       } catch (err) {
         if (err instanceof InvalidCredentialsError) {
@@ -97,23 +90,30 @@ export function createWebRoutes(prisma: PrismaClient, imageStorage: ImageStorage
     res.render('newPost', { error: null });
   });
 
+  // AQUI: Alteração para suportar múltiplas fotos em um post
   router.post(
     '/posts',
-    requireAuth, // middlware
-    upload.single('image'), // middleware
+    requireAuth, 
+    upload.array('images', 5), // 'images' é o nome do campo no form, '5' é o limite máximo
     asyncHandler(async (req, res) => {
       try {
-        let imageUrl: string | undefined;
-        // o parse do arquivo fica disponivel em req.file
-        if (req.file) {
-          console.log({ file: req.file })
-          imageUrl = await imageStorage.upload(req.file);
+        const imageUrls: string[] = [];
+        
+        // Com upload.array, os ficheiros ficam disponíveis em req.files (array)
+        if (req.files && Array.isArray(req.files)) {
+          // Precisamos fazer upload de CADA ficheiro para o storage sequencialmente (ou em paralelo)
+          for (const file of req.files) {
+            const url = await imageStorage.upload(file);
+            imageUrls.push(url);
+          }
         }
+        
         const tags = typeof req.body.tags === 'string'
           ? req.body.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
           : undefined;
 
-        await postController.create(req.session.userId!, { content: req.body.content, tags }, imageUrl);
+        // Chamamos a versão atualizada do controller que aceita um array de urls
+        await postController.create(req.session.userId!, { content: req.body.content, tags }, imageUrls);
         res.redirect('/');
       } catch (err) {
         if (err instanceof ValidationError) {

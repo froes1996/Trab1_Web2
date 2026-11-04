@@ -2,9 +2,6 @@ import type { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { DuplicateFollowError, SelfFollowError, UserNotFoundError, ValidationError } from '../shared/errors.js';
 
-// Criar usuário agora é responsabilidade só do AuthController#register
-// (precisa de senha/hash) — não existe mais um "criar usuário sem senha"
-// aqui, de propósito.
 export class UserController {
   constructor(private readonly prisma: PrismaClient) {}
 
@@ -21,8 +18,6 @@ export class UserController {
     return user;
   }
 
-  // Autorrelação N:N em ação: um User segue outro User através da tabela
-  // de junção explícita `Follow`.
   async follow(followerId: number, body: unknown) {
     const { targetId } = (body ?? {}) as { targetId?: unknown };
     if (typeof targetId !== 'number' || !Number.isInteger(targetId)) {
@@ -55,25 +50,31 @@ export class UserController {
     }
   }
 
-  // Feed = posts de quem eu sigo. Mostra um filtro relacional aninhado:
-  // "posts cujo autor tem, entre seus seguidores, um Follow onde eu sou o
-  // follower" — sem precisar buscar a lista de ids manualmente antes.
-  async feed(userId: number) {
+  // AQUI: Adicionado suporte a paginação por cursor (scroll infinito)
+  // e inclusão das novas relações (images, likes, e contagem de comentários)
+  async feed(userId: number, cursor?: number, limit: number = 10) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) {
       throw new UserNotFoundError(userId);
     }
 
     return this.prisma.post.findMany({
+      take: limit,
+      skip: cursor ? 1 : 0, // Se o cursor existir, pula ele mesmo (pois já está na tela)
+      cursor: cursor ? { id: cursor } : undefined,
       where: { author: { followers: { some: { followerId: userId } } } },
-      include: { author: true, tags: true },
+      include: { 
+        author: true, 
+        tags: true,
+        images: { orderBy: { order: 'asc' } }, // Garante a ordem do carrossel
+        // Trazemos as curtidas e comentários para o feed
+        likes: true, 
+        _count: { select: { comments: true, likes: true } }
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  // Lista para a tela inicial sugerir quem seguir: todo mundo, exceto eu
-  // mesmo, marcando quem eu já sigo (`isFollowing`) para a view decidir
-  // entre mostrar o botão "Seguir" ou "Já segue".
   async listOthers(currentUserId: number) {
     const users = await this.prisma.user.findMany({
       where: { id: { not: currentUserId } },

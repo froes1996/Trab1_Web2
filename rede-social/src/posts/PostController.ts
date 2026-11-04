@@ -4,15 +4,8 @@ import { PostNotFoundError, TagNotFoundError, UserNotFoundError, ValidationError
 export class PostController {
   constructor(private readonly prisma: PrismaClient) {}
 
-  // `authorId` vem da SESSÃO (ver src/webRoutes.ts), nunca do corpo da
-  // requisição: é a autorização "você só pode postar como você mesmo" em
-  // código — antes da Aula 05 (sem login), qualquer chamador podia mandar
-  // qualquer `authorId` no body.
-  //
-  // 1:N (author) + N:N (tags) na mesma escrita: `connect` liga o post a um
-  // autor existente, `connectOrCreate` reaproveita tags já cadastradas ou
-  // cria as que ainda não existem — tudo em uma única operação do Prisma.
-  async create(authorId: number, body: unknown, imageUrl?: string) {
+  // Atualizado para receber um array de imageUrls em vez de uma única string
+  async create(authorId: number, body: unknown, imageUrls: string[] = []) {
     const { content, tags } = (body ?? {}) as { content?: unknown; tags?: unknown };
 
     if (typeof content !== 'string' || content.trim().length === 0) {
@@ -32,7 +25,6 @@ export class PostController {
     return this.prisma.post.create({
       data: {
         content,
-        imageUrl,
         author: { connect: { id: authorId } },
         tags: {
           connectOrCreate: tagNames.map((name) => ({
@@ -40,15 +32,31 @@ export class PostController {
             create: { name },
           })),
         },
+        // Nova relação 1:N com PostImage (cria os registros na tabela filha automaticamente)
+        images: {
+          create: imageUrls.map((url, index) => ({
+            url,
+            order: index, // Mantém a ordem em que as imagens foram enviadas para o carrossel
+          })),
+        },
       },
-      include: { author: true, tags: true },
+      include: { 
+        author: true, 
+        tags: true, 
+        images: { orderBy: { order: 'asc' } } 
+      },
     });
   }
 
   async get(id: number) {
     const post = await this.prisma.post.findUnique({
       where: { id },
-      include: { author: true, tags: true },
+      // Incluindo as imagens e ordenando-as
+      include: { 
+        author: true, 
+        tags: true, 
+        images: { orderBy: { order: 'asc' } }
+      },
     });
     if (!post) {
       throw new PostNotFoundError(id);
@@ -59,7 +67,15 @@ export class PostController {
   async listByTag(name: string) {
     const tag = await this.prisma.tag.findUnique({
       where: { name },
-      include: { posts: { include: { author: true }, orderBy: { createdAt: 'desc' } } },
+      include: { 
+        posts: { 
+          include: { 
+            author: true,
+            images: { orderBy: { order: 'asc' } }
+          }, 
+          orderBy: { createdAt: 'desc' } 
+        } 
+      },
     });
     if (!tag) {
       throw new TagNotFoundError(name);
@@ -67,9 +83,6 @@ export class PostController {
     return tag.posts;
   }
 
-  // A checagem "é dono do post?" já aconteceu no middleware
-  // `requireOwnPost` (src/auth/middleware.ts) antes desta rota ser
-  // chamada — aqui só falta apagar.
   async remove(id: number): Promise<void> {
     await this.prisma.post.delete({ where: { id } });
   }
