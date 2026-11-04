@@ -34,9 +34,7 @@ export function createServer(prisma: PrismaClient, imageStorage: ImageStorage = 
   app.use(createWebRoutes(prisma, imageStorage));
   app.use('/api', createRoutes(userController, postController));
 
-  // --- NOVAS ROTAS DE API (Fetch/JSON) PARA LIKES, COMMENTS E FEED PAGINADO ---
-  
-  // Endpoint paginado para o Scroll Infinito
+
   app.get('/api/feed', requireAuth, asyncHandler(async (req, res) => {
     const cursor = req.query.cursor ? Number(req.query.cursor) : undefined;
     const limit = req.query.limit ? Number(req.query.limit) : 10;
@@ -44,19 +42,16 @@ export function createServer(prisma: PrismaClient, imageStorage: ImageStorage = 
     res.json(posts);
   }));
 
-  // Endpoint de Toggle Like (Post)
   app.post('/api/posts/:id/like', requireAuth, asyncHandler(async (req, res) => {
     const result = await likeController.togglePostLike(req.session.userId!, Number(req.params.id));
     res.json(result);
   }));
 
-  // Endpoint de Toggle Like (Comment)
   app.post('/api/comments/:id/like', requireAuth, asyncHandler(async (req, res) => {
     const result = await likeController.toggleCommentLike(req.session.userId!, Number(req.params.id));
     res.json(result);
   }));
 
-  // Endpoints de Comments (Criar e Listar)
   app.post('/api/posts/:id/comments', requireAuth, asyncHandler(async (req, res) => {
     const comment = await commentController.create(req.session.userId!, Number(req.params.id), req.body.content);
     res.json(comment);

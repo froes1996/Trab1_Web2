@@ -90,18 +90,17 @@ export function createWebRoutes(prisma: PrismaClient, imageStorage: ImageStorage
     res.render('newPost', { error: null });
   });
 
-  // AQUI: Alteração para suportar múltiplas fotos em um post
   router.post(
     '/posts',
     requireAuth, 
-    upload.array('images', 5), // 'images' é o nome do campo no form, '5' é o limite máximo
+    upload.array('images', 5),
     asyncHandler(async (req, res) => {
       try {
         const imageUrls: string[] = [];
         
-        // Com upload.array, os ficheiros ficam disponíveis em req.files (array)
+        
         if (req.files && Array.isArray(req.files)) {
-          // Precisamos fazer upload de CADA ficheiro para o storage sequencialmente (ou em paralelo)
+         
           for (const file of req.files) {
             const url = await imageStorage.upload(file);
             imageUrls.push(url);
@@ -141,6 +140,47 @@ export function createWebRoutes(prisma: PrismaClient, imageStorage: ImageStorage
     asyncHandler(async (req, res) => {
       await userController.follow(req.session.userId!, { targetId: Number(req.body.targetId) });
       res.redirect('/');
+    }),
+  );
+
+  router.get(
+    '/posts/:id',
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const postId = Number(req.params.id);
+      const currentUserId = req.session.userId!;
+
+      const [currentUser, post] = await Promise.all([
+        userController.get(currentUserId),
+        prisma.post.findUnique({
+          where: { id: postId },
+          include: {
+            author: true,
+            tags: true,
+            images: { orderBy: { order: 'asc' } },
+            likes: true, 
+            _count: { select: { likes: true } },
+            comments: {
+              include: { 
+                author: true, 
+                likes: true,
+                _count: { select: { likes: true } }
+              },
+              orderBy: [
+                { likes: { _count: 'desc' } },
+                { createdAt: 'asc' }
+              ]
+            }
+          }
+        })
+      ]);
+
+      if (!post) {
+        res.status(404).render('error', { status: 404, message: 'Post não encontrado' });
+        return;
+      }
+
+      res.render('post', { currentUser, post });
     }),
   );
 

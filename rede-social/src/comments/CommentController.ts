@@ -2,18 +2,24 @@ import type { PrismaClient } from '@prisma/client';
 import { PostNotFoundError, ValidationError } from '../shared/errors.js';
 
 export class CommentController {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient) {}
 
-  async create(authorId: number, postId: number, content: string) {
-    if (typeof content !== 'string' || content.trim().length === 0) {
-      throw new ValidationError('"content" é obrigatório');
+  async create(userId: number, postId: number, content: string) {
+    if (!content || content.trim() === '') {
+      throw new Error('O conteúdo do comentário é obrigatório');
     }
-    const post = await this.prisma.post.findUnique({ where: { id: postId } });
-    if (!post) throw new PostNotFoundError(postId);
 
     return this.prisma.comment.create({
-      data: { content, authorId, postId },
-      include: { author: true },
+      data: {
+        content: content,
+        authorId: userId,
+        postId: postId,
+      },
+      include: {
+        author: true,
+        likes: true,
+        _count: { select: { likes: true } }
+      }
     });
   }
 
@@ -25,7 +31,6 @@ export class CommentController {
         likes: true, 
         _count: { select: { likes: true } }
       },
-      // Atende ao requisito 9: "Ordenar comentários por mais curtidos (em vez de só por data)"
       orderBy: [
         { likes: { _count: 'desc' } },
         { createdAt: 'asc' }
@@ -37,7 +42,6 @@ export class CommentController {
     await this.prisma.comment.delete({ where: { id } });
   }
 
-  // Atende ao requisito 7: "Edição de comentário próprio"
   async update(id: number, content: string) {
     if (typeof content !== 'string' || content.trim().length === 0) {
       throw new ValidationError('"content" é obrigatório');
